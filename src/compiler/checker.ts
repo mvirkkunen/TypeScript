@@ -13540,7 +13540,7 @@ namespace ts {
          * @remarks Because this function calls getSpreadType, it needs to use the same checks as checkObjectLiteral,
          * which also calls getSpreadType.
          */
-        function createJsxAttributesTypeFromAttributesProperty(openingLikeElement: JsxOpeningLikeElement, filter?: (symbol: Symbol) => boolean, checkMode?: CheckMode) {
+        function createJsxAttributesTypeFromAttributesProperty(openingLikeElement: JsxOpeningLikeElement, filter?: (symbol: Symbol) => boolean, checkMode?: CheckMode, contextualTypes?: Type) {
             const attributes = openingLikeElement.attributes;
             let attributesTable = createMap<Symbol>();
             let spread: Type = emptyObjectType;
@@ -13552,10 +13552,20 @@ namespace ts {
 
             for (const attributeDecl of attributes.properties) {
                 const member = attributeDecl.symbol;
+                let exprType: Type;                
                 if (isJsxAttribute(attributeDecl)) {
-                    const exprType = attributeDecl.initializer ?
-                        checkExpression(attributeDecl.initializer, checkMode) :
-                        trueType;  // <Elem attr /> is sugar for <Elem attr={true} />
+                    if (attributeDecl.initializer) {
+                        if (contextualTypes) {
+                            const targetPropertySymbol = getPropertyOfType(contextualTypes, attributeDecl.name.text);
+                            if (targetPropertySymbol) {
+                                exprType = checkExpressionWithContextualType(attributeDecl.initializer, getTypeOfSymbol(targetPropertySymbol), /*contextualMapper*/ undefined);
+                            }
+                        }
+                        exprType = checkExpression(attributeDecl.initializer, checkMode);
+                    }
+                    else {
+                        exprType = trueType;  // <Elem attr /> is sugar for <Elem attr={true} />
+                    }
 
                     const attributeSymbol = <TransientSymbol>createSymbol(SymbolFlags.Property | SymbolFlags.Transient | member.flags, member.name);
                     attributeSymbol.declarations = member.declarations;
@@ -14246,7 +14256,7 @@ namespace ts {
             const sourceAttributesType = createJsxAttributesTypeFromAttributesProperty(openingLikeElement,
                 attribute => {
                     return isUnhyphenatedJsxName(attribute.name) || !!(getPropertyOfType(targetAttributesType, attribute.name));
-                });
+                }, /*checkMode*/ undefined, targetAttributesType);
 
             // If the targetAttributesType is an emptyObjectType, indicating that there is no property named 'props' on this instance type.
             // but there exists a sourceAttributesType, we need to explicitly give an error as normal assignability check allow excess properties and will pass.
